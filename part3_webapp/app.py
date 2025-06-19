@@ -16,15 +16,15 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from part1_gui.sku_mapper import SKUMapper
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your-secret-key'  # Change this to a secure secret key
+app.config['SECRET_KEY'] = 'a6643aff9837615918861d89f080f4841a3d01c3ddb8871b2da8fa6db200b0e7'  # Secure random secret key
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
 # Baserow configuration
 # Replace with your new token from Baserow settings
-app.config['BASEROW_API_TOKEN'] = 'vPBS1xTy6whr1PwhP1vqp7ZSfTuIBklk'  
-app.config['BASEROW_DATABASE_ID'] = 244113  
+app.config['BASEROW_API_TOKEN'] = 'VeeCAOvHLb3Bn9j7qgAAHAgm0BcDQ5oa'  
+app.config['BASEROW_DATABASE_ID'] = 244261
 
 # Ensure upload folder exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -95,9 +95,6 @@ def logout():
     return redirect(url_for('login'))
 
 def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'csv', 'xlsx'}
-
-def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'csv', 'xlsx', 'xls'}
 
 @app.route('/upload', methods=['GET', 'POST'])
@@ -116,8 +113,24 @@ def upload_file():
     if file and allowed_file(file.filename):
         filename = secure_filename(file.filename)
         timestamp = datetime.utcnow()
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{timestamp.strftime('%Y%m%d%H%M%S')}_{filename}")
-        file.save(file_path)
+        ext = filename.rsplit('.', 1)[1].lower()
+        base_filename = f"{timestamp.strftime('%Y%m%d%H%M%S')}_{filename.rsplit('.', 1)[0]}"
+        if ext in {'xlsx', 'xls'}:
+            # Convert Excel to CSV
+            temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{base_filename}.{ext}")
+            file.save(temp_path)
+            df = pd.read_excel(temp_path)
+            csv_filename = f"{base_filename}.csv"
+            csv_path = os.path.join(app.config['UPLOAD_FOLDER'], csv_filename)
+            df.to_csv(csv_path, index=False)
+            os.remove(temp_path)
+            file_path = csv_path
+            filename = csv_filename
+        else:
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{base_filename}.csv")
+            df = pd.read_csv(file)
+            df.to_csv(file_path, index=False)
+            filename = os.path.basename(file_path)
         
         # Create upload record
         upload = Upload(
@@ -172,28 +185,28 @@ def process_data():
         df = session.sku_mapper.process_file(session.last_processed_file)
         df['Inventory_Status'] = df.apply(lambda row: check_and_update_inventory(session.sku_mapper, row), axis=1)
         
-        # Save processed file
+        # Save processed file as CSV
         timestamp = datetime.utcnow()
-        output_filename = f"processed_{timestamp.strftime('%Y%m%d%H%M%S')}.xlsx"
+        output_filename = f"processed_{timestamp.strftime('%Y%m%d%H%M%S')}.csv"
         output_path = os.path.join(app.config['UPLOAD_FOLDER'], output_filename)
-        df.to_excel(output_path, index=False)
+        df.to_csv(output_path, index=False)
         
-        # Create upload record for processed file
+        # Record processed file
         upload = Upload(
             filename=output_filename,
             user_id=current_user.id,
             file_type='processed',
+            timestamp=timestamp,
             processed=True,
-            status='Processing complete'
+            status='Processed and ready for export'
         )
         db.session.add(upload)
         db.session.commit()
-        
         flash('Data processed successfully', 'success')
+        return redirect(url_for('view_file', filename=output_filename))
     except Exception as e:
         flash(f'Error processing data: {str(e)}', 'error')
-    
-    return redirect(url_for('index'))
+        return redirect(url_for('index'))
 
 def check_and_update_inventory(mapper, row):
     try:
@@ -282,15 +295,9 @@ def view_file(filename):
     """View a processed file in the browser."""
     try:
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        if filename.endswith('.csv'):
-            df = pd.read_csv(file_path)
-        else:
-            df = pd.read_excel(file_path)
-        
-        # Convert DataFrame to HTML table with Bootstrap classes
+        df = pd.read_csv(file_path)
         table_html = df.to_html(classes=['table', 'table-striped', 'table-bordered', 'table-hover'],
                                index=False, escape=False)
-        
         return render_template('view_file.html', table=table_html, filename=filename)
     except Exception as e:
         flash(f'Error viewing file: {str(e)}', 'error')
@@ -299,22 +306,18 @@ def view_file(filename):
 @app.route('/export_to_baserow/<filename>')
 def export_to_baserow(filename: str):
     """Export a processed file to Baserow."""
+    # DEBUG: Print current Baserow config
+    print('DEBUG: BASEROW_API_TOKEN:', app.config.get('BASEROW_API_TOKEN'))
+    print('DEBUG: BASEROW_DATABASE_ID:', app.config.get('BASEROW_DATABASE_ID'))
     if not app.config.get('BASEROW_API_TOKEN') or not app.config.get('BASEROW_DATABASE_ID'):
         flash('Baserow API token or Database ID not configured. Please check your configuration.', 'error')
         return redirect(url_for('view_file', filename=filename))
-
     try:
-        # Read the file
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         if not os.path.exists(file_path):
             flash('File not found.', 'error')
             return redirect(url_for('index'))
-
-        if filename.endswith('.csv'):
-            df = pd.read_csv(file_path)
-        else:
-            df = pd.read_excel(file_path)
-        
+        df = pd.read_csv(file_path)
         if df.empty:
             flash('No data to export.', 'error')
             return redirect(url_for('view_file', filename=filename))
