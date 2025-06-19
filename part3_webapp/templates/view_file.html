@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}View File - {{ filename }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col">
+            <h2>{{ filename }}</h2>            <div class="btn-group" role="group">
+                <a href="{{ url_for('download_file', filename=filename) }}" class="btn btn-primary">
+                    <i class="fas fa-download"></i> Download File
+                </a>
+                <a href="{{ url_for('export_to_baserow', filename=filename) }}" class="btn btn-success">
+                    <i class="fas fa-cloud-upload-alt"></i> Export to Baserow
+                </a>
+                <a href="{{ url_for('index') }}" class="btn btn-secondary">
+                    <i class="fas fa-arrow-left"></i> Back to Dashboard
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col">
+            <div class="table-responsive">
+                {{ table | safe }}
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .table {
+        font-size: 0.9rem;
+    }
+    .table thead {
+        position: sticky;
+        top: 0;
+        background-color: #fff;
+        z-index: 1;
+    }
+</style>
+{% endblock %}

@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Processing Complete</title>
+</head>
+<body>
+    <h1>Data Processing Complete</h1>
+    <p>Your file has been processed successfully</p>
+    <a href="{{ url_for('download', filename=filename) }}">Download Processed File</a>
+    <p><a href="{{ url_for('index') }}">Process another file</a></p>
+</body>
+</html>
